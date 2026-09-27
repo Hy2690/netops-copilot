@@ -1,0 +1,14 @@
+# 虚拟环境
+.venv/
+# 向量数据库（可重建，无需入库）
+chroma_db/
+# 审计日志（运行时生成）
+audit.log
+# 模型文件（大文件，单独存放）
+models/
+*.gguf
+# Python缓存
+__pycache__/
+*.pyc
+# 评估输出文件
+eval_*.txt
