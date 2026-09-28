@@ -393,7 +393,7 @@ Agentic RAG：问题 → Agent 判断需要背景知识 → 构造检索词 → 
 **检索词是根据排查进展动态构造的**，这是固定流水线做不到的。
 这也是为什么工具 docstring 里写明了"使用时机"——那是在教模型什么时候该查知识库。
 
-## 3.7 RAG 的失败模式（面试高频）
+## 3.7 RAG 的失败模式
 
 1. **垃圾进垃圾出**：文档过期/错误，Agent 会一本正经地引用错误 SOP → 知识库需要 owner 和验证日期（我们的 Runbook 头部都有）
 2. **检索缺失**：该命中的没命中 → 调 chunk 策略、增大 k、查询改写
@@ -459,73 +459,3 @@ PagerDuty 把自己内部完整的事故响应流程开源了，含值班、分�
 
 ---
 
-# 第六部分：简历写法（v2 升级版）
-
-> **NetOps Copilot —— 本地大模型驱动的网络智能运维 Agent（WSL2 / RAG 知识库）**
-> >
-> - 基于 LangGraph + Ollama 构建完全本地化的运维 Agent，通过 ReAct 循环自主完成
->   "报障 → 证据采集 → 交叉验证 → 根因定位 → 人工审批修复"全流程
-> - 实现 **Agentic RAG** 知识库：以 bge-m3 本地嵌入 + ChromaDB 构建运维知识检索
->   （Runbook/历史工单/拓扑/变更规范），检索作为工具由 Agent 自主决定调用时机与检索词，
->   使诊断结论可关联历史工单、修复建议对齐 SOP，并全程标注来源
-> - 设计生产级安全护栏：只读/变更双白名单、人工审批中断点、全量 JSON 审计日志
-> - 搭建故障注入评估框架，4 类典型故障场景下根因定位准确率 XX%，
->   并完成 Qwen3.8-27B（GSQ-RCO-IQ3_S）/ gpt-oss-20b / qwen3.5-9b 三模型横向对比
-> - 技术栈：Python / LangGraph / RAG（bge-m3 + ChromaDB）/ Ollama / WSL2 / Netmiko
-
-**面试可能被追问的 RAG 问题**：为什么用 RAG 而不是微调？chunk_size 怎么定的？
-检索质量怎么评估？Agentic RAG 和普通 RAG 区别？——本文 3.1/3.4/3.6/3.7 节都有答案。
-
----
-
-# 第七部分：v2 打卡清单
-
-- [x] WSL2 里 `nvidia-smi` 看到 5080，Ollama 跑在 GPU 上（`ollama ps`）
-- [ ] `rag.py rebuild` 成功，`rag.py query` 三条测试查询全部命中正确文档
-- [ ] 场景 2 跑出"关联 INC-2026-0918"的 RAG 增强轨迹，截图保存
-- [ ] 往 knowledge/ 里加 3 份 Scoutflo playbook，重建索引并测试检索
-- [ ] 对比实验：同一个故障场景，禁用/启用知识库各跑一次，对比结论质量差异（写成 README 里的一段实验记录，面试官爱看）
-- [ ] 调参实验：chunk_size 400→800，观察检索命中变化并记录
-- [ ] 把 RAG 增强轨迹 + 实验数据更新进 GitHub README
-
----
-
-# 附录 A：切换 llama.cpp / vLLM 推理后端（可选进阶）
-
-项目默认用 Ollama 作为推理后端。agent.py 内置了 `LLM_BACKEND` 开关，
-可切换到任何 OpenAI 兼容端点（llama.cpp、vLLM 等），无需改业务代码。
-
-## A.1 llama.cpp（推荐尝试：Ollama 的底层就是它）
-
-```bash
-# 1. WSL 中编译 CUDA 版（需 sudo apt install cuda-toolkit-12-8，不要装 nvidia 驱动）
-git clone https://github.com/ggml-org/llama.cpp && cd llama.cpp
-cmake -B build -DGGML_CUDA=ON && cmake --build build -j --target llama-server
-
-# 2. 启动 OpenAI 兼容服务（直接复用已下载的 GGUF；--jinja 开启工具调用）
-./build/bin/llama-server -m ~/models/Qwen3.8-27B-GSQ-RCO-IQ3_S.gguf \
-    --jinja -c 16384 -ngl 99 --port 8080
-
-# 3. 项目切换后端
-LLM_BACKEND=openai LLM_BASE_URL=http://localhost:8080/v1 OLLAMA_MODEL=qwen38-gsq python agent.py
-```
-
-排错：若工具调用报 Jinja 模板错误，说明 GGUF 内嵌模板不认识 tool 角色，
-用 `--chat-template-file` 指定支持工具调用的模板即可。
-
-## A.2 vLLM（了解定位即可，当前配置不推荐）
-
-vLLM 是生产级高并发服务引擎，但其 GGUF 支持为实验性且性能远低于原生格式
-（社区实测同卡吞吐约为 AWQ 的 1/8）。要用 vLLM 需改用 AWQ/GPTQ 版权重
-（27B INT4 约 15GB，16G 显存很紧张），且其连续批处理优势只在多人并发时才有意义。
-单用户 Agent 场景继续用 Ollama/llama.cpp 即可。若将来要体验：
-
-```bash
-pip install vllm   # 需 CUDA 12.8+（Blackwell）
-vllm serve <AWQ模型路径> --enable-auto-tool-choice --tool-call-parser qwen3_coder \
-    --max-model-len 16384 --gpu-memory-utilization 0.92 --port 8000
-LLM_BACKEND=openai LLM_BASE_URL=http://localhost:8000/v1 OLLAMA_MODEL=<模型名> python agent.py
-```
-
-**三者定位记忆法**：GGUF 系（Ollama/llama.cpp）打本地单用户；
-AWQ/GPTQ + vLLM 打生产高并发。项目若演进到多人共用服务，再迁 vLLM。
